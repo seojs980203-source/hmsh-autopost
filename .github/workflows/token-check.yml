@@ -1,0 +1,21 @@
+name: hmsh-token-check
+# 매주 월 09:52 KST(00:52 UTC) 토큰 생존 점검 + 60일 연장 — wht token-check.yml 미러
+on:
+  schedule:
+    - cron: '52 0 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: 구글 서비스계정 키 생성(임시)
+        run: printf '%s' "$GOOGLE_CREDENTIALS" > google-credentials.json
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      - run: node token-check.js
