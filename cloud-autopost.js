@@ -85,6 +85,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     } else if (kind === 'IMAGE') {
       const c = await igPost(`${conf.ig_user_id}/media`, { image_url: items[0], caption });
       if (!c.id) throw new Error('컨테이너 실패 ' + JSON.stringify(c).slice(0, 300));
+      await waitFinished(c.id, 24); // 이미지도 처리 완료 대기 (최대 2분) — code 9007 방지
       creationId = c.id;
     } else { // CAROUSEL — 자식(이미지/영상 혼합 가능) → 부모
       const children = [];
