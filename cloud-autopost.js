@@ -1,6 +1,6 @@
 // 희망사항(hmsh_official_) 릴스 클라우드 자동발행 — wht-autopost/cloud-autopost.js 미러 (릴스판)
 // 구조: 시트 큐(IG_Reels_Queue_hmsh 시트1)에서 status=ready 첫 행 → REELS 3단계 발행 → done/error 기록.
-// 영상: videos/ 폴더의 mp4를 repo raw URL로 발행 (A열=파일명), 또는 A열에 http URL 직접.
+// 미디어: videos/(mp4) 또는 images/(jpg) 폴더 파일을 repo raw URL로 발행 (A열=파일명), 또는 A열에 http URL 직접.
 // 비밀: GOOGLE_CREDENTIALS(서비스계정 JSON)만 GitHub Secret. 운영토큰은 시트 '_config' 탭 (월핫템 방식).
 // 안전핀: _config publish_enabled=true 일 때만 실발행. 로컬 테스트: node cloud-autopost.js --dry
 const path = require('path');
@@ -9,7 +9,8 @@ const DIR = __dirname;
 const SHEET_ID = '1nkBS79b_SDvmnowkaA5OAo9wL8W2b8Tt6ZqbisFcEPE';
 const QTAB = '시트1', CONF = '_config';
 const G = 'https://graph.instagram.com/v21.0';
-const RAW_BASE = 'https://raw.githubusercontent.com/seojs980203-source/hmsh-autopost/main/videos/';
+const RAW_ROOT = 'https://raw.githubusercontent.com/seojs980203-source/hmsh-autopost/main/';
+const rawFolder = name => /\.(mp4|mov)$/i.test(name) ? 'videos/' : 'images/';
 const DRY = process.argv.includes('--dry');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -52,7 +53,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   //    "a.mp4" → 릴스 / "a.jpg" → 사진 피드 / "a.jpg, b.jpg" (쉼표) → 캐러셀(월핫템 방식)
   const toUrl = v => /^https?:\/\//i.test(v)
     ? v.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace(/([?&])dl=0/, '$1dl=1')
-    : RAW_BASE + encodeURIComponent(v);
+    : RAW_ROOT + rawFolder(v) + encodeURIComponent(v);
   const items = t.v.split(',').map(s => s.trim()).filter(Boolean).map(toUrl);
   const isVideo = u => /\.(mp4|mov)(\?|$)/i.test(u);
   const kind = items.length > 1 ? 'CAROUSEL' : (isVideo(items[0]) ? 'REELS' : 'IMAGE');
