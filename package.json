@@ -1,0 +1,9 @@
+{
+  "name": "hmsh-autopost",
+  "version": "1.0.0",
+  "private": true,
+  "description": "희망사항(hmsh_official_) 릴스 클라우드 자동발행 (GitHub Actions) — wht-autopost 미러",
+  "dependencies": {
+    "googleapis": "^171.0.0"
+  }
+}
