@@ -48,38 +48,65 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (!t) { console.log('📭 발행 대기 없음'); return; }
   const setRow = async (st, result) => sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${QTAB}'!C${t.rowNum}:D${t.rowNum}`, valueInputOption: 'RAW', requestBody: { values: [[st, result]] } });
 
-  // 4) URL 결정: http면 그대로(드롭박스 정규화), 아니면 repo raw
-  let videoUrl = /^https?:\/\//i.test(t.v)
-    ? t.v.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace(/([?&])dl=0/, '$1dl=1')
-    : RAW_BASE + encodeURIComponent(t.v);
+  // 4) A열 파싱 → 미디어 타입 자동 판별
+  //    "a.mp4" → 릴스 / "a.jpg" → 사진 피드 / "a.jpg, b.jpg" (쉼표) → 캐러셀(월핫템 방식)
+  const toUrl = v => /^https?:\/\//i.test(v)
+    ? v.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace(/([?&])dl=0/, '$1dl=1')
+    : RAW_BASE + encodeURIComponent(v);
+  const items = t.v.split(',').map(s => s.trim()).filter(Boolean).map(toUrl);
+  const isVideo = u => /\.(mp4|mov)(\?|$)/i.test(u);
+  const kind = items.length > 1 ? 'CAROUSEL' : (isVideo(items[0]) ? 'REELS' : 'IMAGE');
   let caption = t.cap;
   if (!/#syntheticperformer/i.test(caption)) caption = (caption ? caption + '\n' : '') + '#syntheticperformer';
-  console.log(`행 ${t.rowNum} → ${videoUrl.slice(0, 100)}`);
+  console.log(`행 ${t.rowNum} [${kind}] → ${items[0].slice(0, 90)}${items.length > 1 ? ` 외 ${items.length - 1}장` : ''}`);
 
   const enabled = conf.publish_enabled === 'true' && !DRY;
   if (!enabled) { console.log('🟡 드라이런 (publish_enabled=' + conf.publish_enabled + ')'); return; }
 
-  // 5) REELS 3단계
+  // 5) 발행 (컨테이너 → [처리 대기] → publish)
   try {
     const igPost = async (ep, params) => (await fetch(`${G}/${ep}`, { method: 'POST', body: new URLSearchParams({ ...params, access_token: TOKEN() }) })).json();
-    const c = await igPost(`${conf.ig_user_id}/media`, { media_type: 'REELS', video_url: videoUrl, caption, share_to_feed: 'true' });
-    if (!c.id) throw new Error('컨테이너 실패 ' + JSON.stringify(c).slice(0, 300));
-    let status = '', tries = 0;
-    while (tries++ < 60) { await sleep(5000);
-      const s = await (await fetch(`${G}/${c.id}?fields=status_code&access_token=${TOKEN()}`)).json();
-      status = s.status_code || '';
-      if (status === 'FINISHED' || status === 'ERROR') break;
+    const waitFinished = async (id, maxTries) => {
+      let status = '', tries = 0;
+      while (tries++ < maxTries) { await sleep(5000);
+        const s = await (await fetch(`${G}/${id}?fields=status_code&access_token=${TOKEN()}`)).json();
+        status = s.status_code || '';
+        if (status === 'FINISHED' || status === 'ERROR') break;
+      }
+      if (status !== 'FINISHED') throw new Error(status === 'ERROR' ? '미디어 처리 실패(스펙 확인)' : '처리 타임아웃');
+    };
+
+    let creationId;
+    if (kind === 'REELS') {
+      const c = await igPost(`${conf.ig_user_id}/media`, { media_type: 'REELS', video_url: items[0], caption, share_to_feed: 'true' });
+      if (!c.id) throw new Error('컨테이너 실패 ' + JSON.stringify(c).slice(0, 300));
+      await waitFinished(c.id, 60); creationId = c.id;
+    } else if (kind === 'IMAGE') {
+      const c = await igPost(`${conf.ig_user_id}/media`, { image_url: items[0], caption });
+      if (!c.id) throw new Error('컨테이너 실패 ' + JSON.stringify(c).slice(0, 300));
+      creationId = c.id;
+    } else { // CAROUSEL — 자식(이미지/영상 혼합 가능) → 부모
+      const children = [];
+      for (const u of items) {
+        const p = isVideo(u) ? { media_type: 'VIDEO', video_url: u, is_carousel_item: 'true' } : { image_url: u, is_carousel_item: 'true' };
+        const d = await igPost(`${conf.ig_user_id}/media`, p);
+        if (!d.id) throw new Error('캐러셀 아이템 실패 ' + JSON.stringify(d).slice(0, 200));
+        if (isVideo(u)) await waitFinished(d.id, 60);
+        children.push(d.id);
+      }
+      const car = await igPost(`${conf.ig_user_id}/media`, { media_type: 'CAROUSEL', children: children.join(','), caption });
+      if (!car.id) throw new Error('캐러셀 부모 실패 ' + JSON.stringify(car).slice(0, 200));
+      creationId = car.id;
     }
-    if (status !== 'FINISHED') throw new Error(status === 'ERROR' ? '영상 처리 실패(MP4 H.264/AAC 9:16 확인)' : '처리 타임아웃');
-    const pub = await igPost(`${conf.ig_user_id}/media_publish`, { creation_id: c.id });
+    const pub = await igPost(`${conf.ig_user_id}/media_publish`, { creation_id: creationId });
     if (!pub.id) throw new Error('발행 실패 ' + JSON.stringify(pub).slice(0, 300));
     await setRow('done', pub.id);
     console.log('✅ 발행 완료 ' + pub.id);
-    await tg(`✅ <b>HMSH 릴스 자동발행 완료</b>\n@${me.username} · media ${pub.id}\n${caption.split('\n')[0].slice(0, 60)}`);
+    await tg(`✅ <b>HMSH 자동발행 완료 [${kind}]</b>\n@${me.username} · media ${pub.id}\n${caption.split('\n')[0].slice(0, 60)}`);
   } catch (e) {
     await setRow('error', String(e.message).slice(0, 200));
     console.log('❌ ' + e.message);
-    await tg(`🚨 <b>HMSH 릴스 발행 실패</b>\n행 ${t.rowNum}: ${e.message}`);
+    await tg(`🚨 <b>HMSH 발행 실패 [${kind}]</b>\n행 ${t.rowNum}: ${e.message}`);
     process.exit(1);
   }
 })().catch(e => { console.error('FATAL', e); process.exit(1); });
