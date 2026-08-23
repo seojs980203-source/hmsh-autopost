@@ -1,11 +1,15 @@
 name: hmsh-autopost
-# 매일 20:47 KST(11:47 UTC) 자동 발행 — wht-autopost publish.yml 미러 (주기만 매일).
-# 정각 0분 회피(47분): GitHub Actions 스케줄러 혼잡 지연 완화 (월핫템에서 검증된 세팅).
-# 비밀: GOOGLE_CREDENTIALS(서비스계정 JSON) 1개만 GitHub Secret. 운영토큰은 시트 _config 탭.
-# 시트 _config publish_enabled=true 여야 실발행 (안전핀).
+# 자동 발행 — wht-autopost publish.yml 미러.
+# 기본: 매일 20:47 KST(11:47 UTC). 47분 = 정각 회피(스케줄러 혼잡 지연 완화, 월핫템 검증 세팅).
+# 2026-08-23 한정: 스파밀 모델컷 20:00·22:00 KST 원타임 발행 (18:10은 수동 트리거로 발행).
+#   같은 날 20:47 기본 크론이 22:00분을 먼저 집어가지 않도록 8/23은 기본 크론에서 제외.
+# 비밀: GOOGLE_CREDENTIALS 1개만 GitHub Secret. 운영토큰은 시트 _config 탭. publish_enabled=true 여야 실발행.
 on:
   schedule:
-    - cron: '47 11 * * *'
+    - cron: '0 11 23 8 *'        # 2026-08-23 20:00 KST (원타임)
+    - cron: '0 13 23 8 *'        # 2026-08-23 22:00 KST (원타임)
+    - cron: '47 11 24-31 8 *'    # 8/24~ 매일 20:47 KST
+    - cron: '47 11 * 1-7,9-12 *' # 8월 외 매일 20:47 KST
   workflow_dispatch: {}
 
 concurrency:
