@@ -39,14 +39,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (rr.access_token) { await setConf('ig_long_token', rr.access_token); console.log('토큰 연장'); }
   } catch (e) { console.log('연장 스킵 ' + e.message); }
 
-  // 3) 큐: ready 첫 행
-  const rows = (await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${QTAB}'!A1:D200` })).data.values || [];
-  let t = null;
+  // 3) 큐: ready 중 E열(예약일 YYYY-MM-DD) 조건을 만족하는 첫 행. E가 비어있으면 즉시 발행 가능.
+  const rows = (await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${QTAB}'!A1:E200` })).data.values || [];
+  const todayKST = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  let t = null, waiting = 0;
   for (let i = 1; i < rows.length; i++) {
-    const [v, cap, st] = [(rows[i][0] || '').trim(), (rows[i][1] || '').trim(), (rows[i][2] || '').trim().toLowerCase()];
-    if (st === 'ready' && v) { t = { rowNum: i + 1, v, cap }; break; }
+    const [v, cap, st, , notBefore] = [(rows[i][0] || '').trim(), (rows[i][1] || '').trim(), (rows[i][2] || '').trim().toLowerCase(), '', (rows[i][4] || '').trim()];
+    if (st !== 'ready' || !v) continue;
+    if (notBefore && notBefore > todayKST) { waiting++; continue; } // 예약일 미도래 — 건너뛰고 다음 ready 확인
+    t = { rowNum: i + 1, v, cap }; break;
   }
-  if (!t) { console.log('📭 발행 대기 없음'); return; }
+  if (!t) { console.log(`📭 발행 대기 없음${waiting ? ` (예약일 대기 ${waiting}건)` : ''}`); return; }
   const setRow = async (st, result) => sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${QTAB}'!C${t.rowNum}:D${t.rowNum}`, valueInputOption: 'RAW', requestBody: { values: [[st, result]] } });
 
   // 4) A열 파싱 → 미디어 타입 자동 판별
