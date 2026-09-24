@@ -82,7 +82,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     let creationId;
     if (kind === 'REELS') {
-      const c = await igPost(`${conf.ig_user_id}/media`, { media_type: 'REELS', video_url: items[0], caption, share_to_feed: 'true' });
+      // 커버: images/<영상이름>_cover.jpg가 repo에 있으면 썸네일로 사용 (26-09-24)
+      const coverName = t.v.replace(/\.(mp4|mov)$/i, '_cover.jpg');
+      const cover = require('fs').existsSync(path.join(DIR, 'images', coverName)) ? { cover_url: RAW_ROOT + 'images/' + encodeURIComponent(coverName) } : {};
+      const c = await igPost(`${conf.ig_user_id}/media`, { media_type: 'REELS', video_url: items[0], caption, share_to_feed: 'true', ...cover });
       if (!c.id) throw new Error('컨테이너 실패 ' + JSON.stringify(c).slice(0, 300));
       await waitFinished(c.id, 60); creationId = c.id;
     } else if (kind === 'IMAGE') {
